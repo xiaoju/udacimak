@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import fs from 'fs-extra';
+import path from 'path';
 import {
   writeHtmlCourseSummary,
   writeHtmlLesson,
@@ -21,30 +22,36 @@ const dirTree = require('directory-tree');
 /**
  * Render a whole course/Nanodegree by creating HTML files, downloading resources
  * (videos, images)
- * @param {string} path path to source JSON files of a course/nanodegree
+ * @param {string} sourceDir path to source JSON files of a course/nanodegree
  * @param {string} targetDir target directory to save the contents
  */
-export default async function renderCourse(path, targetDir) {
-  if (path === targetDir) {
-    throw new Error('Target directory must not be the same with source directory. Please change the target directory.');
+export default async function renderCourse(sourceDir, targetDir) {
+  if (sourceDir === targetDir) {
+    logger.error('Target directory must not be the same with source directory. Please change the target directory.');
+    return;
   }
 
   try {
     await fs.access(targetDir, fs.constants.F_OK);
   } catch (error) {
-    throw new Error(`Target directory doesn't exist. Please create the directory "${targetDir}"`);
+    logger.error(`Target directory doesn't exist. Please create the directory "${targetDir}"`);
+    return;
   }
 
   let courseType;
-  const sourceDirTree = dirTree(path);
+  const sourceDirTree = dirTree(sourceDir);
   if (!sourceDirTree) {
-    throw new Error('Path to downloaded Udacity course/Nanodegree doesn\'t exist.');
+    logger.error('Path to downloaded Udacity course/Nanodegree doesn\'t exist.');
+    return;
   }
 
   const nanodegreeName = sourceDirTree.name;
 
-  if (filenamify(path) === filenamify(`${targetDir}/${nanodegreeName}`)) {
-    throw new Error('Please choose another target directory to avoid rendering contents into the same folder that contains downloaded JSON data from Udacity.');
+  const isTargetSameAsSource = fs.existsSync(path.join(process.cwd(), targetDir, 'data.json'));
+
+  if (isTargetSameAsSource || (filenamify(sourceDir) === filenamify(`${targetDir}/${nanodegreeName}`))) {
+    logger.error('Please choose another target directory to avoid rendering contents into the same folder that contains downloaded JSON data from Udacity.');
+    return;
   }
 
   // flag to determine if this folder contains downloaded course JSON from Udacity
@@ -53,14 +60,14 @@ export default async function renderCourse(path, targetDir) {
     const child = sourceDirTree.children[i];
     if (child.name === 'data.json') {
       // check if this is a nanodegree, free course or what
-      courseType = getCourseType(path);
+      courseType = getCourseType(sourceDir);
       isCourseFolder = true;
       break;
     }
   }
 
   if (!isCourseFolder) {
-    logger.info(`${path} doesn't contain 'data.json' to start rendering the contents. Are you sure this folder contains downloaded course JSON from Udacity?`);
+    logger.info(`${sourceDir} doesn't contain 'data.json' to start rendering the contents. Are you sure this folder contains downloaded course JSON from Udacity?`);
     return;
   }
   // create the root folder for the course
@@ -69,9 +76,9 @@ export default async function renderCourse(path, targetDir) {
   // create Nanodegree summary home page
   let promiseCourseSummary;
   if (courseType === 'NANODEGREE') {
-    promiseCourseSummary = writeHTMLNanodegreeSummary(path, dirNanodegree, nanodegreeName);
+    promiseCourseSummary = writeHTMLNanodegreeSummary(sourceDir, dirNanodegree, nanodegreeName);
   } else {
-    promiseCourseSummary = writeHtmlCourseSummary(path, dirNanodegree, nanodegreeName);
+    promiseCourseSummary = writeHtmlCourseSummary(sourceDir, dirNanodegree, nanodegreeName);
   }
 
   await promiseCourseSummary;
@@ -109,7 +116,7 @@ export default async function renderCourse(path, targetDir) {
                 const dirNameLesson = `${prefixPart}-${prefixModule}-${treeLesson.name}`;
                 const pathLesson = makeDir(dirNanodegree, dirNameLesson);
 
-                const pathSourceJSON = `${path}/${treePart.name}/${treeModule.name}/${treeLesson.name}`;
+                const pathSourceJSON = `${sourceDir}/${treePart.name}/${treeModule.name}/${treeLesson.name}`;
                 await writeHtmlLesson(pathSourceJSON, pathLesson);
               } //.if treeLesson.type
             } //.for lessons
